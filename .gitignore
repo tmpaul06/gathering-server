@@ -1,0 +1,30 @@
+# Mac stuff
+.DS_Store
+
+# NPM and dependency objects
+npm-debug.log*
+node_modules
+
+# Auto-created files
+dist/*
+build/*
+release/*
+
+src/public/scripts/*
+
+# Temporary files
+tmp
+
+# Data generation files
+data-gen
+
+# Sublime Text
+*sublime-workspace
+*.sublime-project
+newrelic_agent.log
+
+# Docs dist
+docs/dist/*
+
+# Graft meta
+.graft

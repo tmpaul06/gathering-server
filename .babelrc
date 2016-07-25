@@ -1,0 +1,24 @@
+{
+  "env": {
+    "notproduction": {
+      "plugins": [
+        ["babel-plugin-module-alias", [
+          { "src": "npm:@roam/graft/dist/server", "expose": "graft-server" },
+          { "src": "npm:@roam/graft/dist/editor", "expose": "graft-editor" },
+          { "src": "npm:../schema.json", "expose": "schema.json" }
+        ]]
+      ],
+    }
+  },
+  "presets": ["es2015", "stage-0"],
+  "plugins": [
+    ["babel-plugin-module-alias", [
+      { "src": "../graft/src/server", "expose": "graft-server" },
+      { "src": "../graft/src/editor", "expose": "graft-editor" },
+      { "src": "./schema.json", "expose": "schema.json" }
+    ]]
+  ],
+  "ignore": [
+    "node_modules/**/*.js"
+  ]
+}
