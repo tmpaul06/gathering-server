@@ -80,7 +80,7 @@ class App {
     app.use("/api/login", function(req, res) {
       let email = req.body.email;
       let isMaster = false;
-      if (email === "tharun@nineleaps.com") {
+      if (email === process.env.MASTER_EMAIL) {
         isMaster = true;
       }
       req.session.user = {
@@ -88,7 +88,11 @@ class App {
         email: req.body.email,
         isMaster
       };
-      return res.status(200).send();
+      return res.status(200).send({
+        name: req.body.name,
+        email: req.body.email,
+        isMaster
+      });
     });
 
     app.get("/ping", function(req, res) {
@@ -106,6 +110,8 @@ class App {
         res.status(500).send({});
       }
     });
+
+    this.handleSockets = this.handleSockets.bind(this);
   }
 
   // ***********************************************
@@ -157,22 +163,29 @@ class App {
     // socket.emit('ping', { msg: 'Hello. I know socket.io.' });
 
     // Print messages from the client.
-    socket.on("triviaAnswer", function(data) {
-      console.log(data, socket.handshake.session);
+    socket.on("triviaAnswer", (data) => {
+      // Send it to master room
+      let user = socket.handshake.session.user;
+      this.io.to("master").emit("triviaResult", {
+        name: user.name,
+        time: Date.now() + data.time
+      });
     });
 
-    socket.on("userLogin", function(data) {
-      console.log(socket.handshake.session.user);
-      socket.handshake.session.userdata = data;
-    });
-
-    socket.on("login", function(userdata) {
-      socket.handshake.session.userdata = userdata;
-    });
-    socket.on("logout", function(userdata) {
-      if (socket.handshake.session.userdata) {
-        delete socket.handshake.session.userdata;
+    socket.on("userLogin", function(user) {
+      // Set user session state
+      if (user.isMaster) {
+        // Join master room
+        socket.join("master");
+      } else {
+        socket.join("slave");
       }
+      socket.handshake.session.user = user;
+    });
+
+    // Slide changes
+    socket.on("slideChange", (data) => {
+      this.io.to("slave").emit("masterSlideChanged", data);
     });
   }
 
