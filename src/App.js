@@ -190,6 +190,23 @@ class App {
       socket.handshake.session.user = user;
     });
 
+    socket.on("disconnect", () => {
+      // If the socket belongs to a master user, send the information
+      // to master
+      let user = socket.handshake.session.user;
+      if (user) {
+        if (user.isMaster) {
+          socket.leave("master");
+          socket.dispatcher = null;
+        } else {
+          socket.leave("slave");
+          this.io.to("master").emit("slaveLogout", {
+            user
+          });
+        }
+      }
+    });
+
     // Slide changes
     socket.on("slideChange", (data) => {
       this.io.to("slave").emit("masterSlideChanged", data);

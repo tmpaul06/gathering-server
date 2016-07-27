@@ -8,8 +8,10 @@ export default class RoundRobinDispatcher {
     if (i >= this.targets.length) {
       i = 0;
     }
+    data._serverId = this.targets[i];
     socket.broadcast.to(this.targets[i]).emit(eventName, data);
-    this.targetIndex++;
+    i++;
+    this.targetIndex = i;
   }
   add(targetId) {
     // Run over each target and make sure that there is no
