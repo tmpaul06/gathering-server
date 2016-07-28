@@ -8,7 +8,7 @@ import Logger from "./utils/Logger";
 import morgan from "morgan";
 import path from "path";
 import io from "socket.io";
-import RoundRobinDispatcher from "./utils/RoundRobinDispatcher";
+import EventHandlers from "./event-handlers";
 
 
 let session = require("express-session")({
@@ -46,6 +46,7 @@ class App {
     this._express = app;
     this._server = null;
     this._appConfig = appConfig;
+    this.clients = {};
 
     // Disable header for security
     app.set("x-powered-by", false);
@@ -63,12 +64,14 @@ class App {
     app.use(bodyParser.json());
     app.use(bodyParser.urlencoded({ extended: false }));
 
-    app.use("/api/checkLogin", function(req, res) {
+    app.use("/api/checkLogin", (req, res) => {
       if (req.session.user) {
         return res.status(200).json({
           name: req.session.user.name,
           email: req.session.user.email,
           isMaster: req.session.user.isMaster,
+          masterState: this.masterState,
+          clients: req.session.user.isMaster ? this.clients : undefined,
           loggedIn: true
         });
       } else {
@@ -78,11 +81,14 @@ class App {
       }
     });
 
-    app.use("/api/login", function(req, res) {
+    app.use("/api/login", (req, res) => {
       let email = req.body.email;
       let isMaster = false;
       if (email === process.env.MASTER_EMAIL) {
         isMaster = true;
+        // Master logins in again, then set master
+        // state to null.
+        this.masterState = null;
       }
       req.session.user = {
         name: req.body.name,
@@ -92,6 +98,8 @@ class App {
       return res.status(200).send({
         name: req.body.name,
         email: req.body.email,
+        clients: isMaster ? this.clients : undefined,
+        masterState: this.masterState,
         isMaster
       });
     });
@@ -160,19 +168,14 @@ class App {
   }
 
   handleSockets(socket) {
-    // Emit a message to send it to the client.
-    // socket.emit('ping', { msg: 'Hello. I know socket.io.' });
-
-    // Print messages from the client.
-    socket.on("triviaAnswer", (data) => {
-      // Send it to master room
-      let user = socket.handshake.session.user;
-      this.io.to("master").emit("triviaResult", {
-        name: user.name,
-        time: Date.now() + data.time
-      });
+    // The server will maintain the list of active connections and send
+    // that to the master if master reloads page or logs in again from
+    // a new machine
+    Object.keys(EventHandlers).map((k) => {
+      let handler = new EventHandlers[k]();
+      handler.register(socket, this.io);
     });
-
+    // Handle user login
     socket.on("userLogin", (user) => {
       // Set user session state
       if (user.isMaster) {
@@ -180,6 +183,11 @@ class App {
         socket.join("master");
         // Send master specific data, e.g no of slave clients
       } else {
+        // Add to clients list
+        this.clients[user.email] = {
+          clientId: socket.id,
+          user
+        };
         socket.join("slave");
         // Let master clients know
         this.io.to("master").emit("slaveLogin", {
@@ -189,12 +197,13 @@ class App {
       }
       socket.handshake.session.user = user;
     });
-
+    // Handle socket disconnection
     socket.on("disconnect", () => {
       // If the socket belongs to a master user, send the information
       // to master
       let user = socket.handshake.session.user;
       if (user) {
+        delete this.clients[user.email];
         if (user.isMaster) {
           socket.leave("master");
           socket.dispatcher = null;
@@ -204,58 +213,20 @@ class App {
             user
           });
         }
+      } else {
+        let key;
+        Object.keys(this.clients).map((k) => {
+          if (this.clients[k].clientId === socket.id) {
+            key = k;
+          }
+        });
+        delete this.clients[key];
       }
     });
-
-    // Slide changes
+    // Handle the following separately because we need the master state to be set
     socket.on("slideChange", (data) => {
+      this.masterState = data;
       this.io.to("slave").emit("masterSlideChanged", data);
-    });
-
-    // client-server simulations
-    socket.on("assignClient", (data) => {
-      let user = socket.handshake.session.user;
-      if (user.isMaster) {
-        // Now emit a message to the target socket so that it can become a client.
-        socket.broadcast.to(data.id).emit("clientAssignment", {});
-      }
-    });
-    // Take this socket and add the server to a round robin dispatcher.
-    socket.on("assignServer", (data) => {
-      // Create a round robin dispatcher on the socket if it does not exist
-      // Only master clients can do this
-      let user = socket.handshake.session.user;
-      if (user.isMaster) {
-        if (socket.dispatcher === undefined) {
-          socket.dispatcher = new RoundRobinDispatcher();
-        }
-        socket.dispatcher.add(data.id);
-        // Now emit a message to the target socket so that it can become a server.
-        socket.broadcast.to(data.id).emit("serverAssignment", {});
-      }
-    });
-
-    // Message from client. Broadcast to master. Master will in turn forward
-    // it to dispatcher which will eventually hit a server
-    socket.on("clientMessage", (data) => {
-      data._clientId = socket.id;
-      this.io.to("master").emit("clientMessage", data);
-    });
-
-    socket.on("clientMessageForward", (data) => {
-      if (socket.dispatcher) {
-        // Also pass the clientId through.
-        socket.dispatcher.dispatch(socket, "clientMessage", data);
-      }
-    });
-
-    socket.on("serverMessage", (data) => {
-      // Send back to master so that its view can be updated
-      this.io.to("master").emit("serverMessage", data);
-    });
-
-    socket.on("serverMessageForward", (data) => {
-      socket.broadcast.to(data._clientId).emit("serverMessage", data);
     });
   }
 
