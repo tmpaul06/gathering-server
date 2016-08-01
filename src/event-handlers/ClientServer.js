@@ -2,27 +2,16 @@ import RoundRobinDispatcher from "../utils/RoundRobinDispatcher";
 
 export default class ClientServerEventHandler {
   register(socket, io) {
-    // client-server simulations
-    socket.on("assignClient", (data) => {
-      let user = socket.handshake.session.user;
-      if (user.isMaster) {
-        // Now emit a message to the target socket so that it can become a client.
-        socket.broadcast.to(data.id).emit("clientAssignment", {});
-      }
-    });
-
     // Take this socket and add the server to a round robin dispatcher.
-    socket.on("assignServer", (data) => {
+    socket.on("assignRole", (data) => {
       // Create a round robin dispatcher on the socket if it does not exist
       // Only master clients can do this
       let user = socket.handshake.session.user;
-      if (user.isMaster) {
+      if (user.isMaster && data.role === "server") {
         if (socket.dispatcher === undefined) {
           socket.dispatcher = new RoundRobinDispatcher();
         }
-        socket.dispatcher.add(data.id);
-        // Now emit a message to the target socket so that it can become a server.
-        socket.broadcast.to(data.id).emit("serverAssignment", {});
+        socket.dispatcher.add(data.targetId);
       }
     });
 
